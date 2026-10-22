@@ -5,7 +5,7 @@ on:
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: quest-${{ github.ref }}
   cancel-in-progress: true
@@ -61,3 +61,13 @@ jobs:
           path: build/
           if-no-files-found: error
           retention-days: 14
+      - name: Publish APK as a release asset (direct download link)
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="art-test-${{ github.run_number }}"
+          gh release create "$tag" build/HURR-ArtTest.apk build/HURR-ArtTest.apk.sha256 build/package-report.json \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
+            --title "HURR Art Test #${{ github.run_number }}" \
+            --notes "Development-signed Quest 3 build. Built and package-verified in CI; not yet installed or play-tested on a headset."
