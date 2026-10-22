@@ -1,0 +1,9 @@
+.godot/
+addons/
+android/
+build/
+*.keystore
+*.jks
+*.p12
+*.import
+__pycache__/

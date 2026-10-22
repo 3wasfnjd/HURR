@@ -1,0 +1,35 @@
+; Engine configuration file.
+; HURR — ABODEN GAMES. Art test build: Nouf at true scale in the "Naqsh" art direction.
+
+config_version=5
+
+[application]
+
+config/name="HURR — Art Test"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+boot_splash/bg_color=Color(0, 0, 0, 1)
+boot_splash/show_image=false
+boot_splash/image="res://vr_splash.png"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=2
+
+[xr]
+
+openxr/enabled=true
+openxr/reference_space=1
+openxr/default_action_map="res://config/openxr_action_map.tres"
+openxr/environment_blend_mode=0
+openxr/foveation_level=2
+openxr/foveation_dynamic=true
+shaders/enabled=true
