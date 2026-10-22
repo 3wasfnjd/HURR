@@ -11,8 +11,8 @@ const PERCH_HEIGHT := 0.9
 const LOD_SWITCH_M := 6.0
 const MOVE_SPEED := 1.6
 const SNAP_DEG := 30.0
-const FONT_AR := "res://assets/fonts/baloo-arabic.woff2"
-const FONT_EN := "res://assets/fonts/baloo-latin.woff2"
+const FONT_AR := "res://assets/fonts/cairo-arabic-700-normal.woff2"
+const FONT_EN := "res://assets/fonts/cairo-latin-500-normal.woff2"
 
 var world: HurrWorld
 var nouf: Node3D
@@ -102,13 +102,14 @@ func _build_player() -> void:
 	stats.name = "Stats"
 	stats.font = _font()
 	stats.font_size = 40
-	stats.pixel_size = 0.0006
 	stats.outline_size = 8
 	stats.modulate = Color(1, 0.96, 0.9)
-	stats.position = Vector3(0.0, 0.07, -0.05)
-	stats.rotation_degrees = Vector3(-35, 0, 0)
+	stats.pixel_size = 0.0009
+	stats.position = Vector3(-0.30, -0.27, -0.85)
+	stats.no_depth_test = true
+	stats.render_priority = 10
 	stats.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	left.add_child(stats)
+	head.add_child(stats)
 
 
 func _font() -> Font:
@@ -122,7 +123,7 @@ func _controller(tracker: String, node_name: String) -> XRController3D:
 	var c := XRController3D.new()
 	c.name = node_name
 	c.tracker = tracker
-	c.pose = "grip_pose"
+	c.pose = "grip"   # pose names drop the "_pose" suffix (as in Mafateeh/SHADDA)
 	origin.add_child(c)
 	# A small faceted leather "glove block" so the hands read in the same style.
 	var mesh := BoxMesh.new()
@@ -174,11 +175,15 @@ func _process(_delta: float) -> void:
 		return
 	var fps := Engine.get_frames_per_second()
 	var hz := xr.display_refresh_rate if xr != null and xr.is_initialized() else 0.0
-	stats.text = "إطارات/ث  %d / %d\nرسم  %d\nمثلثات  %dk\nمسافة نوف  %.1f م" % [
+	var hands := "اليد اليسرى %s · اليمنى %s" % [
+		"متصلة" if left.get_has_tracking_data() else "غير متصلة",
+		"متصلة" if right.get_has_tracking_data() else "غير متصلة"]
+	stats.text = "إطارات/ث  %d / %d\nرسم  %d\nمثلثات  %dk\nمسافة نوف  %.1f م\n%s" % [
 		fps, int(hz),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0),
 		(head.global_position * Vector3(1, 0, 1)).distance_to(NOUF_POS),
+		hands,
 	]
 
 
@@ -204,7 +209,13 @@ func _render_preview() -> void:
 			cam.position = Vector3(0.6, 1.6, 0.6)
 			cam.look_at(NOUF_POS + Vector3(0.0, 1.0, 0.0))
 	cam.current = true
-	stats.visible = false
+	if shot == "hud":
+		# What the player sees on start: head camera at standing height with the stats card.
+		head.position = Vector3(0, 1.6, 0)
+		head.current = true
+		_process(0.0)
+	else:
+		stats.visible = false
 	left.visible = false
 	right.visible = false
 	for i in 4:

@@ -47,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libgl1-mesa-dri
-          for s in front wide face; do
+          for s in front wide face falcon hud; do
             timeout 120 xvfb-run -a -s "-screen 0 1600x900x24" godot --rendering-driver opengl3 --rendering-method gl_compatibility --xr-mode off --path . -- --preview --shot=$s
           done
       - name: Export native ARM64 Android APK

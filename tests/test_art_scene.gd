@@ -86,5 +86,16 @@ func _initialize() -> void:
 	check(main != null and main.can_instantiate(), "main scene loads")
 	check(FileAccess.file_exists("res://vr_splash.png"), "studio splash present")
 
+	# Rig wiring (regression: an invalid pose name hid both hands and the stats card).
+	var game := main.instantiate()
+	root.add_child(game)
+	await process_frame
+	for side in ["Left", "Right"]:
+		var c := game.get_node_or_null("Player/" + side) as XRController3D
+		check(c != null and String(c.pose) in ["grip", "aim"], "%s controller uses a valid pose (got %s)" % [side, c.pose if c else "none"])
+	var card := game.get_node_or_null("Player/Head/Stats") as Label3D
+	check(card != null and card.visible, "stats card is pinned to the head and visible at start")
+	game.queue_free()
+
 	print("RESULT: %d failure(s)" % failures)
 	quit(1 if failures > 0 else 0)
