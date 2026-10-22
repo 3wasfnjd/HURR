@@ -50,6 +50,21 @@ func _initialize() -> void:
 		check(absf(aabb.position.y) < 0.01, "%s feet on the ground (min y %.3f)" % [entry[0].get_file(), aabb.position.y])
 		scene.free()
 
+	# Falcon: budget and true size (saker 45-55 cm long; model incl. its stone ~0.44 m tall).
+	var f := (load("res://assets/models/falcon_8k.glb") as PackedScene).instantiate()
+	var ftris := 0
+	var fbox := AABB()
+	for mi in f.find_children("*", "MeshInstance3D", true, false):
+		var fm := (mi as MeshInstance3D).mesh
+		fbox = fm.get_aabb()
+		for s in fm.get_surface_count():
+			var a := fm.surface_get_arrays(s)
+			var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+			ftris += (idx.size() if idx.size() > 0 else (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
+	check(ftris == 8000, "falcon_8k.glb has 8000 triangles (got %d)" % ftris)
+	check(fbox.size.y > 0.40 and fbox.size.y < 0.48, "falcon true size (height %.3f m)" % fbox.size.y)
+	f.free()
+
 	# World: generated, deterministic, within its triangle budget.
 	var w := HurrWorld.new()
 	root.add_child(w)
@@ -61,6 +76,8 @@ func _initialize() -> void:
 	root.add_child(w2)
 	w2.build()
 	check(w2.triangles == w.triangles, "world generation is deterministic")
+	var top := w.perch(Vector3(1, 0, 0), 0.9)
+	check(absf(top.y - 0.9) < 0.001, "perch top at 0.9 m")
 	w.queue_free()
 	w2.queue_free()
 

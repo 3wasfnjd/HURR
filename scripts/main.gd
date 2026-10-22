@@ -5,6 +5,9 @@ extends Node3D
 const NOUF_NEAR := "res://assets/models/nouf_20k.glb"
 const NOUF_FAR := "res://assets/models/nouf_10k.glb"
 const NOUF_POS := Vector3(0.0, 0.0, -2.2)
+const FALCON := "res://assets/models/falcon_8k.glb"
+const PERCH_POS := Vector3(0.85, 0.0, -1.95)
+const PERCH_HEIGHT := 0.9
 const LOD_SWITCH_M := 6.0
 const MOVE_SPEED := 1.6
 const SNAP_DEG := 30.0
@@ -14,6 +17,7 @@ const FONT_EN := "res://assets/fonts/baloo-latin.woff2"
 var world: HurrWorld
 var nouf: Node3D
 var nouf_triangles := {}
+var falcon: Node3D
 var origin: XROrigin3D
 var head: XRCamera3D
 var left: XRController3D
@@ -34,6 +38,8 @@ func _ready() -> void:
 	world.build()
 	nouf = _load_nouf()
 	add_child(nouf)
+	falcon = _load_falcon(world.perch(PERCH_POS, PERCH_HEIGHT))
+	add_child(falcon)
 	_build_player()
 	if preview:
 		_render_preview()
@@ -66,6 +72,18 @@ func _load_nouf() -> Node3D:
 			nouf_triangles[entry[0]] = nouf_triangles.get(entry[0], 0) + tris
 		root.add_child(scene)
 	return root
+
+
+func _load_falcon(top: Vector3) -> Node3D:
+	## The saker on her stone, standing on the pillar beside Nouf's gloved (left) side,
+	## turned a little toward the player.
+	var scene := (load(FALCON) as PackedScene).instantiate() as Node3D
+	scene.name = "Falcon"
+	for mi in scene.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).material_override = HurrWorld.flat_material()
+	scene.position = top
+	scene.rotation_degrees.y = -25.0
+	return scene
 
 
 func _build_player() -> void:
@@ -176,6 +194,9 @@ func _render_preview() -> void:
 		"wide":
 			cam.position = Vector3(3.2, 1.7, 4.0)
 			cam.look_at(Vector3(-0.5, 2.0, -8.0))
+		"falcon":
+			cam.position = PERCH_POS + Vector3(-0.35, 1.25, 0.95)
+			cam.look_at(PERCH_POS + Vector3(0.0, PERCH_HEIGHT + 0.22, 0.0))
 		"face":
 			cam.position = NOUF_POS + Vector3(0.25, 1.55, 0.75)
 			cam.look_at(NOUF_POS + Vector3(0.0, 1.5, 0.0))

@@ -215,6 +215,41 @@ func _groove(st: SurfaceTool, a: Vector2, b: Vector2) -> void:
 	_tri(st, p3, p2 + back, p3 + back, ENGRAVE.darkened(0.3), -side)
 
 
+func perch(at: Vector3, height: float) -> Vector3:
+	## A faceted sandstone pillar the falcon stands on; returns the flat top centre.
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.2
+	cyl.bottom_radius = 0.3
+	cyl.height = height
+	cyl.radial_segments = 7
+	cyl.rings = 3
+	var arr := cyl.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var idxs: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(0, idxs.size(), 3):
+		var p := []
+		for k in 3:
+			var v: Vector3 = verts[idxs[i + k]]
+			if v.y < height * 0.49:   # keep the top flat, roughen the sides
+				var d := 1.0 + 0.18 * _noise.get_noise_3d(v.x * 6.0, v.y * 6.0, v.z * 6.0)
+				v = Vector3(v.x * d, v.y, v.z * d)
+			p.append(v + Vector3(0, height / 2.0, 0))
+		var c: Vector3 = (p[0] + p[1] + p[2]) / 3.0
+		var face_out := Vector3(c.x, 0.0, c.z) if absf(c.y - height) > 0.01 else Vector3.UP
+		if c.y < 0.01:
+			face_out = Vector3.DOWN
+		_tri(st, p[0], p[1], p[2], STONE.lerp(STONE_DARK, 0.2 + 0.2 * sin(c.y * 9.0)), face_out)
+	var mi := MeshInstance3D.new()
+	mi.name = "Perch"
+	mi.mesh = st.commit()
+	mi.material_override = flat_material()
+	mi.position = at
+	add_child(mi)
+	return at + Vector3(0, height, 0)
+
+
 func _boulder(radius: float, idx: int) -> MeshInstance3D:
 	var sphere := SphereMesh.new()
 	sphere.radius = radius
