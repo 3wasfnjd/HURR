@@ -196,6 +196,7 @@ export function buildLevel(scene) {
     }
     geo.dispose();
   };
+  const crown = new FacetBuilder();
   {
     const fb = new FacetBuilder();
     for (const c of L.CIRCLES) {
@@ -213,11 +214,15 @@ export function buildLevel(scene) {
         trunk(fb, V(c.x, g - 0.1, c.z), V(c.x - 0.2, g + 1.6, c.z + 0.1), 0.22, 0.14, PAL.bark);
         trunk(fb, V(c.x - 0.2, g + 1.5, c.z + 0.1), V(c.x - 1.2, g + 2.6, c.z + 0.9), 0.1, 0.06, PAL.bark);   // the branch the net hangs from
         trunk(fb, V(c.x - 0.2, g + 1.5, c.z + 0.1), V(c.x + 0.9, g + 2.8, c.z - 0.6), 0.1, 0.06, PAL.bark);
-        blob(fb, c.x - 0.3, g + 3.0, c.z + 0.1, 2.1, 0.4, 1.9, PAL.acacia, PAL.acaciaDark, 5);              // flat umbrella crown
-        blob(fb, c.x + 0.6, g + 2.85, c.z - 0.5, 1.1, 0.28, 1.0, PAL.acacia, PAL.acaciaDark, 9);
+        blob(crown, c.x - 0.3, g + 3.0, c.z + 0.1, 2.1, 0.4, 1.9, PAL.acacia, PAL.acaciaDark, 5);           // flat umbrella crown
+        blob(crown, c.x + 0.6, g + 2.85, c.z - 0.5, 1.1, 0.28, 1.0, PAL.acacia, PAL.acaciaDark, 9);
       }
     }
     add(fb, 'Trees');
+    // the acacia crown is its own mesh so the camera can fade it when it hides Najd
+    const cm = new THREE.Mesh(crown.geometry(), facetMaterial({ transparent: true }));
+    cm.name = 'AcaciaCrown'; cm.castShadow = true; cm.receiveShadow = true;
+    group.add(cm); tris += crown.triangles;
   }
 
   // ---------------- low desert shrubs and pebbles (break up the floor, never block movement)

@@ -46,7 +46,15 @@ renderer.domElement.id = 'view';
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 220);
+// Camera presets: a distant, slightly telephoto view keeps the characters small (diorama feel)
+// and hides close-up mesh flaws. ?cam=near restores the old close view, ?cam=high looks down more.
+const CAM_PRESETS = {
+  far: { fov: 40, dist: 9.5, pitch: 0.42, wide: 11.5, end: 15, lookUp: 1.0 },
+  high: { fov: 36, dist: 13, pitch: 0.8, wide: 15, end: 18, lookUp: 0.8 },
+  near: { fov: 55, dist: 4.4, pitch: 0.3, wide: 5.6, end: 7.5, lookUp: 1.45 },
+};
+const CAMP = CAM_PRESETS[params.get('cam')] || CAM_PRESETS.far;
+const camera = new THREE.PerspectiveCamera(CAMP.fov, window.innerWidth / window.innerHeight, 0.1, 260);
 
 const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 24, 12), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
@@ -55,18 +63,19 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 24, 12), new THREE.Shad
   fragmentShader: 'uniform vec3 top; uniform vec3 horizon; uniform vec3 ground; varying vec3 vP; void main(){ float h = vP.y; vec3 c = h > 0.0 ? mix(horizon, top, pow(h, 0.6)) : mix(horizon, ground, min(1.0, -h * 4.0)); gl_FragColor = vec4(c, 1.0); }',
 }));
 scene.add(sky);
-scene.fog = new THREE.FogExp2(new THREE.Color(0.92, 0.78, 0.70), 0.016);
+scene.fog = new THREE.FogExp2(new THREE.Color(0.92, 0.78, 0.70), 0.012);
 scene.add(new THREE.HemisphereLight(new THREE.Color(0.62, 0.60, 0.80), new THREE.Color(0.55, 0.42, 0.40), 0.95));
 const sun = new THREE.DirectionalLight(new THREE.Color(1.0, 0.86, 0.70), 2.6);
 const SUN_OFFSET = new THREE.Vector3(24, 9, 6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.mapSize.set(1536, 1536);
 sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.05;
-Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 70 });
+Object.assign(sun.shadow.camera, { left: -18, right: 18, top: 18, bottom: -18, near: 1, far: 80 });
 scene.add(sun, sun.target);
 
 const level = buildLevel(scene);
+const crownMesh = level.group.getObjectByName('AcaciaCrown');
 const net = buildNet();
 scene.add(net);
 
@@ -151,11 +160,11 @@ async function loadActors() {
 }
 
 // ---------------------------------------------------------------- camera rig
-const cam = { yaw: 0, pitch: 0.3, dist: 4.4, idle: 0, target: new THREE.Vector3(), shake: 0 };
+const cam = { yaw: 0, pitch: CAMP.pitch, dist: CAMP.dist, idle: 0, target: new THREE.Vector3(), shake: 0 };
 function updateCamera(dt) {
   const p = sim.player;
   const [dx, dy] = controls.takeCamera();
-  if (dx || dy) { cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.004, -0.05, 1.1); cam.idle = 0; } else cam.idle += dt;
+  if (dx || dy) { cam.yaw -= dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.004, 0.1, 1.25); cam.idle = 0; } else cam.idle += dt;
   // drift behind Najd while she moves (never while the player is steering the camera)
   if (cam.idle > 1.2 && p.speed > 1.0 && p.mode === 'ground') {
     const want = p.yaw + Math.PI;
@@ -164,20 +173,31 @@ function updateCamera(dt) {
   }
   const B = sim.men[1];
   const wide = (B.state === 'block' || B.state === 'stepout') && Math.hypot(B.mover.x - p.x, B.mover.z - p.z) < 14;
-  const wantDist = sim.phase === 'end' ? 7.5 : wide ? 5.6 : 4.4;
+  const wantDist = sim.phase === 'end' ? CAMP.end : wide ? CAMP.wide : CAMP.dist;
   cam.dist = lerp(cam.dist, wantDist, 1 - Math.exp(-dt * 2));
-  const tgt = new THREE.Vector3(p.x, p.y + 1.45, p.z);
+  const tgt = new THREE.Vector3(p.x, p.y + CAMP.lookUp, p.z);
   cam.target.lerp(tgt, 1 - Math.exp(-dt * 10));
   let dist = cam.dist;
   const dir = new THREE.Vector3(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch));
   for (let i = 1; i <= 8; i++) {             // keep the canyon walls out of the lens
     const s = (dist * i) / 8, q = cam.target.clone().addScaledVector(dir, s);
-    const inCrown = LD.CAMERA_BLOCKERS.some((b) => Math.hypot(q.x - b.x, q.z - b.z) < b.r && q.y > b.y0 && q.y < b.y1);
-    if (LD.heightAt(q.x, q.z) > q.y - 0.3 || inCrown) { dist = Math.max(1.2, s * 0.85); break; }
+    if (LD.heightAt(q.x, q.z) > q.y - 0.3) { dist = Math.max(1.2, s * 0.85); break; }
   }
   camera.position.copy(cam.target).addScaledVector(dir, dist);
   if (cam.shake > 0) { camera.position.x += (Math.random() - 0.5) * cam.shake; camera.position.y += (Math.random() - 0.5) * cam.shake; cam.shake *= 0.9; }
   camera.lookAt(cam.target);
+  // fade the acacia crown while it stands between the lens and Najd
+  if (crownMesh) {
+    const b = LD.CAMERA_BLOCKERS[0];
+    let hit = false;
+    for (let i = 1; i < 10 && !hit; i++) {
+      const q = camera.position.clone().lerp(cam.target, i / 10);
+      hit = Math.hypot(q.x - b.x, q.z - b.z) < b.r && q.y > b.y0 - 0.6 && q.y < b.y1;
+    }
+    const m = crownMesh.material;
+    m.opacity = lerp(m.opacity, hit ? 0.22 : 1, 1 - Math.exp(-dt * 8));
+    m.depthWrite = m.opacity > 0.95;
+  }
   sun.position.copy(cam.target).add(SUN_OFFSET);
   sun.target.position.copy(cam.target);
 }
@@ -308,7 +328,7 @@ function showEnd() {
 $('again').addEventListener('click', () => {
   sim = new Slice(); if (AUTO) autopilot = new Autopilot(sim);
   endShown = false; ui.end.classList.remove('on'); ui.fade.classList.remove('on', 'slow');
-  cam.yaw = 0; cam.pitch = 0.3;
+  cam.yaw = 0; cam.pitch = CAMP.pitch;
   for (const v of actors.men) { v.dropped = true; }
 });
 
