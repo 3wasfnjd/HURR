@@ -7,3 +7,4 @@ build/
 *.p12
 *.import
 __pycache__/
+build_number.txt

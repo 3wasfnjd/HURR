@@ -50,8 +50,8 @@ func _initialize() -> void:
 		check(absf(aabb.position.y) < 0.01, "%s feet on the ground (min y %.3f)" % [entry[0].get_file(), aabb.position.y])
 		scene.free()
 
-	# Falcon: budget and true size (saker 45-55 cm long; model incl. its stone ~0.44 m tall).
-	var f := (load("res://assets/models/falcon_8k.glb") as PackedScene).instantiate()
+	# Falcon body (stone cut away so she can fly): budget and true size.
+	var f := (load("res://assets/models/falcon_body.glb") as PackedScene).instantiate()
 	var ftris := 0
 	var fbox := AABB()
 	for mi in f.find_children("*", "MeshInstance3D", true, false):
@@ -61,8 +61,8 @@ func _initialize() -> void:
 			var a := fm.surface_get_arrays(s)
 			var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX]
 			ftris += (idx.size() if idx.size() > 0 else (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()) / 3
-	check(ftris == 8000, "falcon_8k.glb has 8000 triangles (got %d)" % ftris)
-	check(fbox.size.y > 0.40 and fbox.size.y < 0.48, "falcon true size (height %.3f m)" % fbox.size.y)
+	check(ftris > 5000 and ftris < 7000, "falcon_body.glb within budget (got %d)" % ftris)
+	check(fbox.end.y > 0.31 and fbox.end.y < 0.37, "falcon stands ~0.34 m above her feet (got %.3f)" % fbox.end.y)
 	f.free()
 
 	# World: generated, deterministic, within its triangle budget.

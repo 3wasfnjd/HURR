@@ -68,13 +68,13 @@ func _environment() -> void:
 	env.sky = sky
 	# Cool violet fill for the shade side: the "Naqsh" palette keeps shadows violet.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.56, 0.54, 0.78)
-	env.ambient_light_energy = 0.95
+	env.ambient_light_color = Color(0.60, 0.56, 0.74)
+	env.ambient_light_energy = 0.55
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.92, 0.78, 0.70)
-	env.fog_density = 0.006
+	env.fog_density = 0.0025
 	env.fog_sun_scatter = 0.25
 	var we := WorldEnvironment.new()
 	we.name = "Environment"
@@ -86,7 +86,7 @@ func _sun() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
 	sun.light_color = Color(1.0, 0.86, 0.70)
-	sun.light_energy = 1.7
+	sun.light_energy = 2.1
 	sun.shadow_bias = 0.06
 	sun.shadow_normal_bias = 2.5
 	sun.shadow_enabled = true
@@ -97,6 +97,10 @@ func _sun() -> void:
 	# engravings catch light and shadow — the core idea of the "Naqsh" direction.
 	var dir := Vector3(-0.96, -0.25, -0.12).normalized()
 	sun.look_at_from_position(Vector3.ZERO, dir, Vector3.UP)
+
+
+func height_at(x: float, z: float) -> float:
+	return _height(x, z)
 
 
 func _height(x: float, z: float) -> float:

@@ -1,4 +1,4 @@
-name: HURR Quest APK - Art Test
+name: HURR Quest APK
 on:
   push:
     branches: [main]
@@ -39,15 +39,19 @@ jobs:
           fi
       - name: Install verified Godot and OpenXR Vendors
         run: python3 tools/ci/setup_ci.py
+      - name: Stamp the build number into the app
+        run: echo "${{ github.run_number }}" > build_number.txt
       - name: Import resources
         run: godot --headless --xr-mode off --path . --import
       - name: Automated scene tests
         run: timeout 180 godot --headless --xr-mode off --path . --script res://tests/test_art_scene.gd
+      - name: Automated gameplay tests (fixed 72 fps)
+        run: timeout 300 godot --headless --xr-mode off --fixed-fps 72 --path . --script res://tests/test_gameplay.gd
       - name: Render desktop previews (gl_compatibility, not the Quest renderer)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb libgl1-mesa-dri
-          for s in front wide face falcon hud; do
+          for s in action front wide face falcon hud; do
             timeout 120 xvfb-run -a -s "-screen 0 1600x900x24" godot --rendering-driver opengl3 --rendering-method gl_compatibility --xr-mode off --path . -- --preview --shot=$s
           done
       - name: Export native ARM64 Android APK
@@ -66,8 +70,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="art-test-${{ github.run_number }}"
-          gh release create "$tag" build/HURR-ArtTest.apk build/HURR-ArtTest.apk.sha256 build/package-report.json \
+          n="${{ github.run_number }}"
+          cp build/HURR-ArtTest.apk "build/HURR-b$n.apk"
+          sha=$(sha256sum "build/HURR-b$n.apk" | cut -d' ' -f1)
+          # One file only: the APK, named with its build number.
+          gh release create "build-$n" "build/HURR-b$n.apk" \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
-            --title "HURR Art Test #${{ github.run_number }}" \
-            --notes "Development-signed Quest 3 build. Built and package-verified in CI; not yet installed or play-tested on a headset."
+            --title "HURR build $n" \
+            --notes "Development-signed Quest 3 build $n. SHA-256: $sha. Built, package-verified and automated-tested in CI; not yet installed or play-tested on a headset."
