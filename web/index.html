@@ -9,30 +9,69 @@
 <style>
   @font-face { font-family: "Cairo"; src: url("assets/fonts/cairo-arabic-700-normal.woff2") format("woff2"); font-weight: 700; unicode-range: U+0600-06FF, U+0750-077F, U+FB50-FDFF, U+FE70-FEFF; }
   @font-face { font-family: "Cairo"; src: url("assets/fonts/cairo-latin-500-normal.woff2") format("woff2"); font-weight: 500; unicode-range: U+0000-00FF; }
-  :root { --ink: #fff4e6; --night: #14110f; --sand: #d9a07a; }
-  html, body { margin: 0; height: 100%; background: var(--night); overflow: hidden; touch-action: none;
-    font-family: "Cairo", system-ui, sans-serif; color: var(--ink); -webkit-user-select: none; user-select: none; }
+  :root { --ink: #fff4e6; --night: #14110f; --sand: #d9a07a; --glass: rgba(20, 14, 12, .38); }
+  html, body { margin: 0; height: 100%; background: var(--night); overflow: hidden; touch-action: none; overscroll-behavior: none;
+    font-family: "Cairo", system-ui, sans-serif; color: var(--ink); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   canvas { display: block; width: 100vw; height: 100dvh; }
-  #loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--night); transition: opacity .6s; z-index: 5; }
+  .layer { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; transition: opacity .6s; }
+  .gone { opacity: 0; pointer-events: none; }
+  #loading { background: var(--night); z-index: 9; }
   #loading img { width: min(46vw, 260px); }
   #bar { width: min(60vw, 280px); height: 4px; background: #ffffff22; border-radius: 2px; margin: 28px auto 0; overflow: hidden; }
   #bar i { display: block; height: 100%; width: 0; background: var(--sand); transition: width .2s; }
-  #hud { position: fixed; top: max(10px, env(safe-area-inset-top)); right: 12px; left: 12px; display: flex;
-    justify-content: space-between; align-items: center; font-size: 13px; pointer-events: none; text-shadow: 0 1px 3px #000a; }
-  #title { font-weight: 700; font-size: 18px; }
-  #hint { position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); width: 100%; text-align: center; font-size: 13px;
-    opacity: .85; pointer-events: none; text-shadow: 0 1px 3px #000a; }
-  #err { position: fixed; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; background: var(--night); z-index: 6; }
+  #title { z-index: 8; background: linear-gradient(180deg, rgba(20,17,15,.15), rgba(20,17,15,.65)); }
+  #title h1 { font-size: clamp(64px, 18vw, 120px); margin: 0; line-height: 1; text-shadow: 0 4px 24px #0008; }
+  #title p { margin: 8px 0 0; font-size: 17px; opacity: .9; }
+  #title .tap { margin-top: 38px; font-size: 15px; opacity: .8; animation: breathe 2.4s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: .35; } }
+  #hint, #sub { position: fixed; left: 50%; transform: translateX(-50%); max-width: min(88vw, 520px); text-align: center; pointer-events: none;
+    padding: 8px 16px; border-radius: 14px; background: var(--glass); opacity: 0; transition: opacity .35s; font-size: 15px; line-height: 1.5; }
+  #hint { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 4px); }
+  #sub { top: calc(max(14px, env(safe-area-inset-top)) + 4px); font-size: 17px; }
+  #hint.on, #sub.on { opacity: 1; }
+  .btn { position: fixed; display: grid; place-items: center; border-radius: 50%; color: var(--ink); font: 700 17px "Cairo", sans-serif;
+    border: 2px solid #ffffff66; background: var(--glass); opacity: 0; transform: scale(.7); transition: opacity .2s, transform .2s; pointer-events: none; }
+  .btn.show { opacity: 1; transform: scale(1); pointer-events: auto; }
+  #actBtn { width: 92px; height: 92px; right: max(22px, env(safe-area-inset-right)); bottom: calc(max(22px, env(safe-area-inset-bottom)) + 40px);
+    background: conic-gradient(var(--sand) var(--p, 0%), var(--glass) 0); }
+  #actBtn span { display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; background: rgba(20,14,12,.7); }
+  #falconBtn { width: 104px; height: 104px; right: max(22px, env(safe-area-inset-right)); bottom: calc(max(22px, env(safe-area-inset-bottom)) + 150px);
+    border-color: var(--sand); }
+  #falconBtn.pulse { animation: pulse .8s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 14px #d9a07a55; } }
+  #falconBtn svg { width: 46px; height: 46px; display: block; margin: 0 auto -4px; }
+  #stickBase { position: fixed; display: none; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
+    border: 2px solid #ffffff55; background: rgba(20,14,12,.18); pointer-events: none; }
+  #stickKnob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; border-radius: 50%; background: #fff4e6cc; transform: translate(-50%,-50%); }
+  #fade { position: fixed; inset: 0; background: #0b0807; opacity: 0; pointer-events: none; transition: opacity .7s; z-index: 6; }
+  #fade.on { opacity: 1; } #fade.slow { transition: opacity 1.4s; }
+  #end { z-index: 7; opacity: 0; pointer-events: none; padding: 24px; }
+  #end.on { opacity: 1; pointer-events: auto; }
+  #endLine { font-size: clamp(20px, 5.5vw, 30px); margin: 0 0 6px; }
+  #end .who { opacity: .75; margin: 0 0 30px; }
+  #end h2 { font-size: 18px; margin: 0; opacity: .9; } #endTime { opacity: .7; font-size: 14px; margin: 6px 0 22px; }
+  #again { font: 700 17px "Cairo", sans-serif; color: var(--night); background: var(--sand); border: 0; border-radius: 24px; padding: 10px 30px; }
+  #stats { position: fixed; top: 6px; right: 8px; font: 500 11px "Cairo", monospace; opacity: .7; pointer-events: none; direction: ltr; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; padding: 24px; text-align: center; background: var(--night); z-index: 10; white-space: pre-line; }
 </style>
 <script type="importmap">
   { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
 </script>
 </head>
 <body>
-  <div id="loading"><div><img src="assets/brand/aboden_logo.png" alt="عبودين قيمز — ABODEN GAMES"><div id="bar"><i></i></div></div></div>
-  <div id="hud"><span id="title">حُرّ</span><span id="stats"></span></div>
-  <div id="hint">اسحب لتدور حول نوف · قرّب بإصبعين · المس مرتين للعودة</div>
+  <div id="loading" class="layer"><div><img src="assets/brand/aboden_logo.png" alt="عبودين قيمز — ABODEN GAMES"><div id="bar"><i></i></div></div></div>
+  <div id="title" class="layer"><div><h1>حُرّ</h1><p>المرحلة الأولى · الصقر الذي لا يعود</p><div class="tap">المس الشاشة للبدء</div></div></div>
+  <div id="hint"></div>
+  <div id="sub"></div>
+  <div id="stickBase"><div id="stickKnob"></div></div>
+  <button id="actBtn" class="btn" aria-label="فكّ الشبكة"><span>فكّ</span></button>
+  <button id="falconBtn" class="btn" aria-label="انقضّ">
+    <span><svg viewBox="0 0 48 48" fill="none" stroke="#fff4e6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18c8-2 13 1 20 8 7-7 12-10 20-8-6 2-10 6-13 12l-7 10-7-10C14 24 10 20 4 18z"/></svg>انقضّ</span>
+  </button>
+  <div id="fade"></div>
+  <div id="end" class="layer"><div><p id="endLine"></p><p class="who">— عبودين</p><h2>نهاية المقطع الأول من المرحلة 1</h2><p id="endTime"></p><button id="again">إعادة</button></div></div>
+  <div id="stats"></div>
   <div id="err"></div>
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="src/game.js"></script>
 </body>
 </html>
