@@ -1,0 +1,2 @@
+{ "name": "three", "version": "0.186.0", "type": "module", "license": "MIT",
+  "exports": { ".": "./three.module.js", "./addons/*": "./addons/*" } }

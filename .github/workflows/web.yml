@@ -1,0 +1,47 @@
+name: HURR Web (mobile browsers)
+on:
+  push:
+    branches: [web]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: web-pages
+  cancel-in-progress: true
+jobs:
+  test-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Link the vendored three.js for Node tests
+        run: |
+          mkdir -p web/node_modules tests/web/node_modules
+          ln -sfn ../vendor/three web/node_modules/three
+          ln -sfn ../../../web/vendor/three tests/web/node_modules/three
+      - name: Syntax check
+        run: for f in web/src/*.js; do node --check "$f"; done
+      - name: Web tests (world generation, models, page)
+        run: node tests/web/test_web.mjs
+      - name: Stamp the build number
+        run: sed -i "s/<meta name=\"hurr-build\" content=\"dev\">/<meta name=\"hurr-build\" content=\"w${{ github.run_number }}\">/" web/index.html
+      - name: Package the site (no tests, no Node links)
+        run: |
+          rm -rf web/node_modules
+          rm -f web/vendor/three/package.json
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+  deploy:
+    needs: test-and-build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

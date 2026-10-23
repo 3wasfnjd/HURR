@@ -1,0 +1,1 @@
+three.js r186 (MIT) — build/three.module.js, build/three.core.js, examples/jsm/loaders/GLTFLoader.js, examples/jsm/utils/BufferGeometryUtils.js, examples/jsm/utils/SkeletonUtils.js
