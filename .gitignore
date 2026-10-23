@@ -10,3 +10,4 @@ __pycache__/
 build_number.txt
 web/node_modules/
 tests/web/node_modules/
+!web/vendor/three/addons/
