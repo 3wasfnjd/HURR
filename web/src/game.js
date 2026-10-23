@@ -1,5 +1,5 @@
 // HURR — Level 1, slice 1 (mobile browsers first). Wires the deterministic simulation (sim.js)
-// to three.js rendering, touch controls, procedural animation, audio and the Arabic UI.
+// to three.js rendering, touch controls, motion-captured animation, audio and the Arabic UI.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
@@ -7,7 +7,7 @@ import { Slice, DT } from './sim.js';
 import * as LD from './level1_data.js';
 import { buildLevel, buildNet, buildCage, buildWings, facetMaterial } from './level1_view.js';
 import { Controls } from './input.js';
-import * as A from './anim.js';
+import { Animator } from './animator.js';
 import { Autopilot } from './autopilot.js';
 import { clamp, lerp } from './rand.js';
 
@@ -124,18 +124,18 @@ function prepChar(root, { doubleSide = false } = {}) {
 
 async function loadActors() {
   const [najd, trapper, falcon] = await Promise.all([load('assets/models/najd.glb'), load('assets/models/trapper.glb'), load('assets/models/falcon_body.glb')]);
+  const clips = najd.animations;                       // CMU mocap, retargeted (tools/anim/retarget.py)
   const n = prepChar(najd.scene);
   const nRoot = new THREE.Group(); nRoot.add(n); scene.add(nRoot);
-  actors.najd = { root: nRoot, rig: new A.Rig(n), phase: 0 };
+  actors.najd = { root: nRoot, anim: new Animator(n, clips) };
 
   actors.men = sim.men.map((m, i) => {
-    const t = prepChar(i === 0 ? trapper.scene : cloneSkinned(trapper.scene), { doubleSide: true });
-    if (i === 1) t.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
-    if (i === 1) t.traverse((o) => { if (o.isMesh) o.material.color.setRGB(0.82, 0.86, 0.95); });   // second man reads a shade cooler
-    const root = new THREE.Group(); root.add(t); scene.add(root);
-    const rig = new A.Rig(t), cage = buildCage();
-    rig.bones.hand_R.add(cage); cage.position.set(-0.02, -0.26, 0.02);
-    return { root, rig, cage, phase: i * 1.3, dropped: false, stunAge: 0 };
+    const t = prepChar(i === 0 ? trapper.scene : cloneSkinned(trapper.scene));
+    if (i === 1) t.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.setRGB(0.86, 0.88, 0.95); } });
+    const root = new THREE.Group(); root.add(t); root.scale.setScalar(1.07); scene.add(root);
+    const anim = new Animator(t, clips), cage = buildCage();
+    anim.bone('hand_R').add(cage); cage.position.set(-0.02, -0.24, 0.03);
+    return { root, anim, cage, dropped: false, stunAge: 0 };
   });
 
   const fRoot = new THREE.Group(), body = new THREE.Group();
@@ -189,43 +189,40 @@ function updateActors(dt, t) {
   const p = sim.player, nj = actors.najd;
   nj.root.position.set(p.x, p.y, p.z);
   nj.root.rotation.y = p.yaw;
-  let pose;
-  if (sim.phase === 'caught') pose = A.cower();
-  else if (p.mode === 'climb') pose = A.climb(p.climb.t / p.climb.dur);
-  else if (p.mode === 'air') pose = A.airborne();
-  else if (sim.actionPose > 0.05) pose = A.kneel(t, sim.actionPose);
-  else if (p.speed > 0.25) {
-    const run = clamp((p.speed - 2.3) / 2.7, 0, 1);
-    nj.phase += dt * p.speed * (2 * Math.PI / lerp(1.25, 2.3, run));
-    pose = A.locomotion(nj.phase, run);
-  } else pose = A.idle(t);
-  pose.pose = A.layerCall(pose.pose, sim.callPose);
-  nj.rig.apply(pose.pose, pose.drop, dt, p.mode === 'climb' ? 22 : 14);
+  const A = nj.anim;
+  if (sim.phase === 'caught') A.play('cower', 0.15);
+  else if (p.mode === 'climb') A.play('climb', 0.12, A.duration('climb') / p.climb.dur, p.climb.t < dt * 1.5);
+  else if (p.mode === 'air') { /* keep the stride going while dropping off a ledge */ }
+  else if (sim.actionPose > 0.05) A.play('kneel', 0.3);
+  else if (p.speed > 2.8) A.play('run', 0.25, clamp(p.speed / 3.09, 0.8, 1.5));
+  else if (p.speed > 0.25) A.play('walk', 0.25, clamp(p.speed / 1.25, 0.6, 1.5));
+  else A.play('idle', 0.35);
+  A.update(dt);
+  A.layer('call', ['clavicle_L', 'upperarm_L', 'forearm_L', 'hand_L'], 0.55, sim.callPose);   // the gloved fist goes up
 
   sim.men.forEach((m, i) => {
-    const v = actors.men[i], mv = m.mover;
+    const v = actors.men[i], mv = m.mover, M = v.anim;
     v.root.visible = !(m.id === 'A' && (m.state === 'hidden'));
     v.root.position.set(mv.x, mv.y, mv.z);
     v.root.rotation.y = mv.yaw;
-    let ps;
-    if (m.state === 'stunned' || m.state === 'down') { v.stunAge = m.state === 'down' ? 9 : v.stunAge + dt; ps = A.stunned(v.stunAge); } else v.stunAge = 0;
-    if (!ps) {
-      if (m.state === 'hidden') ps = A.crouchHide(t + i);
-      else if (m.state === 'giveup') ps = A.shakeFist(t);
-      else if (m.state === 'block') ps = mv.speed > 0.3 ? A.locomotion((v.phase += dt * mv.speed * 4), 0) : A.blockArms(t);
-      else if (mv.mode === 'climb') ps = A.climb(mv.climb.t / mv.climb.dur);
-      else if (mv.speed > 0.25) { const run = clamp((mv.speed - 2.3) / 2.5, 0, 1); v.phase += dt * mv.speed * (2 * Math.PI / lerp(1.4, 2.5, run)); ps = A.locomotion(v.phase, run); }
-      else ps = A.idle(t + i * 2);
-      if (m.state === 'block' && mv.speed > 0.3) { const b = A.blockArms(t).pose; ps.pose.upperarm_L = b.upperarm_L; ps.pose.upperarm_R = b.upperarm_R; ps.pose.forearm_L = b.forearm_L; ps.pose.forearm_R = b.forearm_R; }
-    }
-    v.rig.apply(ps.pose, ps.drop, dt);
+    if (m.state === 'stunned') { v.stunAge += dt; M.play(v.stunAge < 0.8 ? 'stumble' : 'cower', 0.2); }
+    else if (m.state === 'down') M.play('cower', 0.2);
+    else if (m.state === 'hidden') M.play('kneel', 0.3);
+    else if (m.state === 'giveup') M.play('angry', 0.3);
+    else if (mv.mode === 'climb') M.play('climb', 0.12, M.duration('climb') / mv.climb.dur, mv.climb.t < dt * 1.5);
+    else if (m.state === 'block' && mv.speed < 0.3) M.play('angry', 0.3);
+    else if (mv.speed > 2.8) M.play('run', 0.25, clamp(mv.speed / 3.09, 0.8, 1.5));
+    else if (mv.speed > 0.25) M.play('walk', 0.25, clamp(mv.speed / 1.25, 0.6, 1.5));
+    else M.play('idle', 0.35);
+    if (m.state !== 'stunned') v.stunAge = 0;
+    M.update(dt);
     // the cage drops when the falcon strikes
     if (!m.hasCage && !v.dropped) {
       v.cage.getWorldPosition(wpos); v.dropped = true;
       scene.attach(v.cage); v.cage.position.set(wpos.x, LD.heightAt(wpos.x, wpos.z) + 0.01, wpos.z);
-      v.cage.rotation.set(0, Math.random() * 3, 0.35);
+      v.cage.rotation.set(0, Math.random() * 3, 0.35); v.cage.scale.setScalar(1.07);
     } else if (m.hasCage && v.dropped) {
-      v.dropped = false; v.rig.bones.hand_R.add(v.cage); v.cage.position.set(-0.02, -0.26, 0.02); v.cage.rotation.set(0, 0, 0);
+      v.dropped = false; M.bone('hand_R').add(v.cage); v.cage.position.set(-0.02, -0.24, 0.03); v.cage.rotation.set(0, 0, 0); v.cage.scale.setScalar(1);
     }
   });
 
@@ -333,8 +330,7 @@ function frame(now) {
     handleEvents();
   }
   const simDt = dt * sim.timeScale;
-  updateActors(simDt, sim.time);
-  updateCamera(dt);
+  if (!window.__dbg?.freeze) { updateActors(simDt, sim.time); updateCamera(dt); }
   updateUI(dt);
   renderer.render(scene, camera);
   frames++; fpsT += dt;

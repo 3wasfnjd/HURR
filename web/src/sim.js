@@ -5,9 +5,9 @@ import { clamp, lerp } from './rand.js';
 
 export const DT = 1 / 60;
 export const TUNING = {
-  walk: 2.3, run: 5.0, accel: 16, radius: 0.32,
+  walk: 1.6, run: 4.4, accel: 16, radius: 0.32,
   step: 0.45, climbMax: 2.2, slopeMax: 0.9, gravity: 20,
-  manRun: 4.9, manChaseAfterStun: 3.8, manBlockSpeed: 1.7, manStepOut: 3.2, manRadius: 0.36,
+  manRun: 4.3, manChaseAfterStun: 3.4, manBlockSpeed: 1.4, manStepOut: 2.8, manRadius: 0.36,
   catchDist: 0.95, stunTime: 4.0, diveRange: 15, falconSpeed: 17, falconReturn: 11,
   respawnDelay: 1.8, slowMo: 0.35,
 };
@@ -64,7 +64,7 @@ export class Mover {
       if (ledge && ledge.climb && r.dh <= TUNING.climbMax && allowClimb(ledge)) {
         const ux = this.vx / sp, uz = this.vz / sp;
         const tx = nx + ux * 0.5, tz = nz + uz * 0.5;
-        this.climb = { t: 0, dur: 0.75 + 0.3 * r.dh, fx: this.x, fz: this.z, fy: this.y, tx, tz, ty: L.heightAt(tx, tz), h: r.dh };
+        this.climb = { t: 0, dur: 0.9 + 0.35 * r.dh, fx: this.x, fz: this.z, fy: this.y, tx, tz, ty: L.heightAt(tx, tz), h: r.dh };
         this.mode = 'climb'; this.vx = this.vz = 0; this.yaw = Math.atan2(ux, uz);
         return 'climb';
       }

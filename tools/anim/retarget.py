@@ -43,13 +43,12 @@ CLIPS = {
     "idle":      ("082/82_08.bvh", 0.5, 3.5, "loop"),
     "walk":      ("007/07_01.bvh", 0.6, None, "cycle"),
     "run":       ("009/09_01.bvh", 0.2, None, "cycle"),
-    "climb":     ("015/15_02.bvh", None, None, "once"),
-    "kneel":     ("069/69_70.bvh", None, None, "hold"),
-    "wave":      ("013/13_26.bvh", None, None, "once"),
-    "stumble":   ("022/22_12.bvh", None, None, "once"),
-    "duck":      ("077/77_09.bvh", None, None, "once"),
-    "angry":     ("018/18_10.bvh", None, None, "loop"),
-    "sneak":     ("120/120_08.bvh", None, None, "cycle"),
+    "climb":     ("001/01_02.bvh", 4.2, 5.9, "once"),
+    "kneel":     ("069/69_70.bvh", 1.7, 3.0, "hold"),
+    "call":      ("013/13_26.bvh", 0.2, 1.6, "once"),
+    "stumble":   ("022/22_12.bvh", 0.1, 1.6, "once"),
+    "cower":     ("077/77_09.bvh", 1.6, 3.4, "hold"),
+    "angry":     ("018/18_10.bvh", 3.5, 6.5, "loop"),
 }
 
 

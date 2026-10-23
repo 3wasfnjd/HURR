@@ -5,34 +5,16 @@ procedural animation module drives them all. Rest pose: A-pose, facing +Z, feet 
 Bones carry identity rest rotations; inverse bind matrices are pure translations.
 """
 import json
+import os
 import struct
+import sys
 
 import numpy as np
 
-# name: (parent, rest world position measured on Najd's 1.65 m mesh)
-SKELETON = {
-    "hips":       (None,        (0.0, 0.90, 0.0)),
-    "spine":      ("hips",      (0.0, 1.06, -0.01)),
-    "chest":      ("spine",     (0.0, 1.24, -0.01)),
-    "neck":       ("chest",     (0.0, 1.41, -0.01)),
-    "head":       ("neck",      (0.0, 1.50, 0.0)),
-    "upperarm_L": ("chest",     (0.19, 1.32, -0.02)),
-    "forearm_L":  ("upperarm_L", (0.285, 1.02, -0.05)),
-    "hand_L":     ("forearm_L", (0.34, 0.80, 0.03)),
-    "upperarm_R": ("chest",     (-0.19, 1.32, -0.02)),
-    "forearm_R":  ("upperarm_R", (-0.285, 1.02, -0.05)),
-    "hand_R":     ("forearm_R", (-0.34, 0.80, 0.03)),
-    "thigh_L":    ("hips",      (0.11, 0.88, 0.0)),
-    "shin_L":     ("thigh_L",   (0.14, 0.48, 0.0)),
-    "foot_L":     ("shin_L",    (0.17, 0.10, -0.04)),
-    "thigh_R":    ("hips",      (-0.11, 0.88, 0.0)),
-    "shin_R":     ("thigh_R",   (-0.14, 0.48, 0.0)),
-    "foot_R":     ("shin_R",    (-0.17, 0.10, -0.04)),
-}
-NAMES = list(SKELETON)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from skeleton import SKELETON, NAMES, TIPS  # noqa: E402  (v2: 21 bones)
 IDX = {n: i for i, n in enumerate(NAMES)}
-HAND_TIP_Y = 0.64      # bottom of the hand (end of the hand bone)
-TOE = 0.15             # toe tip z (end of the foot bone)
 
 
 def joint_pos(scale=1.0):
@@ -68,7 +50,7 @@ def _pad4(b, fill=b"\x00"):
     return b + fill * ((4 - len(b) % 4) % 4)
 
 
-def write_skinned_glb(path, pos, col, joints, weights, scale=1.0, name="Character"):
+def write_skinned_glb(path, pos, col, joints, weights, scale=1.0, name="Character", clips=None):
     """Non-indexed, normal-less (flat-shaded in three.js), COLOR_0 as uint16 normalised."""
     n = len(pos)
     jp = joint_pos(scale)
@@ -81,8 +63,30 @@ def write_skinned_glb(path, pos, col, joints, weights, scale=1.0, name="Characte
         m[:3, 3] = -jp[nm]
         ibm[i] = m.T                                         # glTF matrices are column-major
     blobs = [pos32.tobytes(), col16.tobytes(), joints.tobytes(), weights.tobytes(), ibm.tobytes()]
-    views, off, binary = [], 0, b""
     strides = [12, 8, 4, 4, None]
+    acc_extra, animations = [], []
+    for cname, clip in (clips or {}).items():
+        n_f = len(clip["root"])
+        times = (np.arange(n_f) / clip["fps"]).astype(np.float32)
+        base = len(blobs)
+        blobs.append(times.tobytes()); strides.append(None)
+        acc_extra.append({"bufferView": base, "componentType": 5126, "count": n_f, "type": "SCALAR",
+                          "min": [float(times[0])], "max": [float(times[-1])]})
+        t_acc = 5 + len(acc_extra) - 1
+        samplers, channels = [], []
+        for b in NAMES:
+            q = np.asarray(clip["tracks"][b], np.float32)
+            blobs.append(q.tobytes()); strides.append(None)
+            acc_extra.append({"bufferView": len(blobs) - 1, "componentType": 5126, "count": n_f, "type": "VEC4"})
+            samplers.append({"input": t_acc, "output": 5 + len(acc_extra) - 1, "interpolation": "LINEAR"})
+            channels.append({"sampler": len(samplers) - 1, "target": {"node": 1 + IDX[b], "path": "rotation"}})
+        root = np.asarray(clip["root"], np.float32) * scale
+        blobs.append(root.tobytes()); strides.append(None)
+        acc_extra.append({"bufferView": len(blobs) - 1, "componentType": 5126, "count": n_f, "type": "VEC3"})
+        samplers.append({"input": t_acc, "output": 5 + len(acc_extra) - 1, "interpolation": "LINEAR"})
+        channels.append({"sampler": len(samplers) - 1, "target": {"node": 1 + IDX["hips"], "path": "translation"}})
+        animations.append({"name": cname, "samplers": samplers, "channels": channels})
+    views, off, binary = [], 0, b""
     for b, st in zip(blobs, strides):
         b = _pad4(b)
         v = {"buffer": 0, "byteOffset": off, "byteLength": len(b)}
@@ -99,7 +103,7 @@ def write_skinned_glb(path, pos, col, joints, weights, scale=1.0, name="Characte
         {"bufferView": 2, "componentType": 5121, "count": n, "type": "VEC4"},
         {"bufferView": 3, "componentType": 5121, "normalized": True, "count": n, "type": "VEC4"},
         {"bufferView": 4, "componentType": 5126, "count": len(NAMES), "type": "MAT4"},
-    ]
+    ] + acc_extra
     nodes = [{"name": name, "mesh": 0, "skin": 0}]
     for nm in NAMES:
         parent, _ = SKELETON[nm]
@@ -122,6 +126,8 @@ def write_skinned_glb(path, pos, col, joints, weights, scale=1.0, name="Characte
         "bufferViews": views,
         "buffers": [{"byteLength": len(binary)}],
     }
+    if animations:
+        gltf["animations"] = animations
     js = _pad4(json.dumps(gltf, separators=(",", ":")).encode(), b" ")
     out = struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + 8 + len(binary))
     out += struct.pack("<II", len(js), 0x4E4F534A) + js

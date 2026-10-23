@@ -34,7 +34,7 @@ const run2 = runBot();
 check(run2.seconds === run.seconds && run2.slice.player.x === run.slice.player.x, 'simulation is deterministic');
 const noFalcon = runBot({ pressFalcon: false, maxSeconds: 60 });
 check(noFalcon.result !== 'end' && noFalcon.slice.deaths > 0, `without the falcon the second man stops you (${noFalcon.slice.deaths} catches)`);
-const dawdle = runBot({ idleAfterFree: 3, maxSeconds: 90 });
+const dawdle = runBot({ idleAfterFree: 4.5, maxSeconds: 90 });
 check(dawdle.slice.deaths >= 1, 'waiting after freeing the falcon gets you caught by the first man');
 check(dawdle.result === 'end', 'and the checkpoint lets you finish afterwards');
 {
@@ -55,12 +55,16 @@ check(dawdle.result === 'end', 'and the checkpoint lets you finish afterwards');
 
 // ---- models
 const loader = new GLTFLoader();
+const parseFull = (file) => new Promise((ok, no) => {
+  const buf = readFileSync(path.join(root, 'web/assets/models', file));
+  loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', ok, no);
+});
 const parse = (file) => new Promise((ok, no) => {
   const buf = readFileSync(path.join(root, 'web/assets/models', file));
   loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', (g) => ok(g.scene), no);
 });
 for (const [file, trisMin, trisMax, hMin, hMax, skinned] of [
-  ['najd.glb', 20000, 20000, 1.64, 1.66, true], ['trapper.glb', 600, 2000, 1.75, 1.9, true], ['falcon_body.glb', 5807, 5807, 0.40, 0.50, false]]) {
+  ['najd.glb', 20000, 20000, 1.64, 1.66, true], ['trapper.glb', 10000, 10000, 1.64, 1.66, true], ['falcon_body.glb', 5807, 5807, 0.40, 0.50, false]]) {
   const scene = await parse(file);
   let t = 0, colorOk = true, noNormals = true, skin = null, wOk = true;
   scene.traverse((o) => {
@@ -81,10 +85,18 @@ for (const [file, trisMin, trisMax, hMin, hMax, skinned] of [
   check(colorOk && noNormals, `${file}: 16-bit colour, no stored normals`);
   check(size.y >= hMin && size.y <= hMax, `${file}: height ${size.y.toFixed(3)} m`);
   if (skinned) {
-    check(skin && skin.bones.length === 17, `${file}: 17-bone skeleton`);
+    check(skin && skin.bones.length === 21, `${file}: 21-bone skeleton`);
     check(wOk, `${file}: skin weights sum to 1`);
-    for (const b of ['hips', 'upperarm_L', 'hand_R', 'thigh_L', 'foot_R', 'head']) if (!scene.getObjectByName(b)) check(false, `${file}: bone ${b}`);
+    for (const b of ['hips', 'clavicle_L', 'upperarm_L', 'hand_R', 'thigh_L', 'toe_R', 'head']) if (!scene.getObjectByName(b)) check(false, `${file}: bone ${b}`);
   }
+}
+
+{
+  const g = await parseFull('najd.glb');
+  const names = g.animations.map((a) => a.name);
+  for (const n of ['idle', 'walk', 'run', 'climb', 'kneel', 'call', 'stumble', 'cower', 'angry']) check(names.includes(n), `mocap clip "${n}" baked into najd.glb`);
+  const walk = g.animations.find((a) => a.name === 'walk');
+  check(walk && walk.tracks.length === 22 && walk.duration > 0.8 && walk.duration < 1.6, `walk clip: 21 bones + root, ${walk?.duration.toFixed(2)} s`);
 }
 
 // ---- page + text
