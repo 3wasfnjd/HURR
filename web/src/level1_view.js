@@ -249,32 +249,68 @@ export function buildLevel(scene) {
   return { group, triangles: () => tris };
 }
 
-// ---------------- the net (a draped mesh of cords between the acacia branch and two stakes)
-export function buildNet() {
-  const g = L.heightAt(L.NET.x, L.NET.z);
-  const top = [V(L.NET.x - 0.7, g + 2.1, L.NET.z - 0.5), V(L.NET.x + 0.8, g + 2.0, L.NET.z - 0.9)];
-  const bot = [V(L.NET.x - 0.8, g + 0.02, L.NET.z + 0.45), V(L.NET.x + 0.9, g + 0.02, L.NET.z + 0.05)];
-  const N = 9, pts = [];
-  for (let i = 0; i <= N; i++) {
-    const row = [];
-    for (let j = 0; j <= N; j++) {
-      const u = j / N, v = i / N;
-      const a = top[0].clone().lerp(top[1], u), b = bot[0].clone().lerp(bot[1], u);
-      const p = a.clone().lerp(b, v);
-      p.z -= Math.sin(Math.PI * v) * 0.45 * Math.sin(Math.PI * u); p.y -= Math.sin(Math.PI * v) * 0.15;      // belly where the bird pushed in
-      row.push(p);
+// ---------------- the trap: a live pigeon in a harness of fine nooses, tethered to a stone
+// (documented Arabian trapping method). Returns the parts the game animates.
+function ellipsoidFacets(fb, c, r, col0, col1, seed, detail = 1) {
+  const geo = new THREE.IcosahedronGeometry(1, detail), p = geo.attributes.position, rr = mulberry32(seed);
+  for (let i = 0; i < p.count; i += 3) {
+    const q = [0, 1, 2].map((k) => V(c.x + p.getX(i + k) * r.x, c.y + p.getY(i + k) * r.y, c.z + p.getZ(i + k) * r.z));
+    const mid = q[0].clone().add(q[1]).add(q[2]).divideScalar(3);
+    fb.tri(q[0], q[1], q[2], lerp3(col0, col1, rr()), mid.sub(c));
+  }
+  geo.dispose();
+}
+
+export function buildTrap() {
+  const g = L.heightAt(L.TRAP.x, L.TRAP.z);
+  const group = new THREE.Group();
+  group.name = 'Trap';
+  // pigeon (lying on its side under the falcon; its own group so it can fly off when freed)
+  const pigeon = new THREE.Group();
+  const fb = new FacetBuilder();
+  const grey = [0.56, 0.58, 0.64], greyD = [0.42, 0.44, 0.50], neck = [0.36, 0.47, 0.44], bar = [0.22, 0.22, 0.26];
+  ellipsoidFacets(fb, V(0, 0.07, 0), V(0.075, 0.065, 0.12), grey, greyD, 1);          // body
+  ellipsoidFacets(fb, V(0, 0.13, 0.09), V(0.045, 0.05, 0.05), neck, grey, 2, 0);     // neck
+  ellipsoidFacets(fb, V(0, 0.17, 0.12), V(0.035, 0.035, 0.04), grey, greyD, 3, 0);   // head
+  fb.tri(V(-0.008, 0.17, 0.16), V(0.008, 0.17, 0.16), V(0, 0.165, 0.185), [0.2, 0.17, 0.16], V(0, 1, 0));   // beak
+  for (const sgn of [-1, 1]) {                                                       // folded wing with two dark bars
+    fb.tri(V(sgn * 0.07, 0.1, 0.06), V(sgn * 0.08, 0.06, -0.1), V(sgn * 0.065, 0.12, -0.08), greyD, V(sgn, 0.3, 0));
+    fb.tri(V(sgn * 0.077, 0.085, 0.0), V(sgn * 0.08, 0.075, -0.03), V(sgn * 0.072, 0.11, -0.02), bar, V(sgn, 0.3, 0));
+  }
+  fb.tri(V(-0.04, 0.07, -0.11), V(0.04, 0.07, -0.11), V(0, 0.06, -0.22), [0.3, 0.3, 0.34], V(0, 1, 0));    // tail
+  const pm = new THREE.Mesh(fb.geometry(), facetMaterial());
+  pm.castShadow = true;
+  pigeon.add(pm);
+  // the harness of nooses on its back: small upright loops of pale nylon
+  const loops = [];
+  const rr = mulberry32(31);
+  for (let i = 0; i < 9; i++) {
+    const cx = (rr() - 0.5) * 0.1, cz = (rr() - 0.5) * 0.16, r = 0.025 + rr() * 0.02, a = rr() * Math.PI;
+    for (let k = 0; k < 10; k++) {
+      const t0 = (k / 10) * Math.PI * 2, t1 = ((k + 1) / 10) * Math.PI * 2;
+      for (const t of [t0, t1]) loops.push(V(cx + Math.cos(a) * Math.cos(t) * r, 0.13 + r + Math.sin(t) * r, cz + Math.sin(a) * Math.cos(t) * r));
     }
-    pts.push(row);
   }
-  const seg = [];
-  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
-    if (j < N) seg.push(pts[i][j], pts[i][j + 1]);
-    if (i < N) seg.push(pts[i][j], pts[i + 1][j]);
+  const nooses = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(loops), new THREE.LineBasicMaterial({ color: 0xe8e2d4 }));
+  pigeon.add(nooses);
+  pigeon.position.set(L.TRAP.x, g, L.TRAP.z);
+  pigeon.rotation.set(0, 0.6, 0.9);                                                   // knocked onto its side
+  group.add(pigeon);
+  // cord from the harness to the stone, lying slack on the ground
+  const st = L.TRAP.stone, gs = L.heightAt(st.x, st.z);
+  const cordPts = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12, x = L.TRAP.x + (st.x - L.TRAP.x) * t + Math.sin(t * 7) * 0.08, z = L.TRAP.z + (st.z - L.TRAP.z) * t;
+    cordPts.push(V(x, L.heightAt(x, z) + 0.02 + (t < 0.1 ? 0.08 * (1 - t / 0.1) : 0), z));
   }
-  const geo = new THREE.BufferGeometry().setFromPoints(seg);
-  const net = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0x3a2a22 }));
-  net.name = 'Net';
-  return net;
+  const cord = new THREE.Line(new THREE.BufferGeometry().setFromPoints(cordPts), new THREE.LineBasicMaterial({ color: 0x8a6e52 }));
+  group.add(cord);
+  const sfb = new FacetBuilder();
+  ellipsoidFacets(sfb, V(st.x, gs + 0.08, st.z), V(0.22, 0.14, 0.18), [0.62, 0.45, 0.38], [0.48, 0.33, 0.30], 7);
+  const stone = new THREE.Mesh(sfb.geometry(), facetMaterial());
+  stone.castShadow = true; stone.receiveShadow = true;
+  group.add(stone);
+  return { group, pigeon, nooses, cord, ground: g };
 }
 
 // ---------------- a wooden cage the men carry

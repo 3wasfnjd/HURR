@@ -5,7 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { Slice, DT } from './sim.js';
 import * as LD from './level1_data.js';
-import { buildLevel, buildNet, buildCage, buildWings, facetMaterial } from './level1_view.js';
+import { buildLevel, buildTrap, buildCage, buildWings, facetMaterial } from './level1_view.js';
 import { Controls } from './input.js';
 import { Animator } from './animator.js';
 import { Autopilot } from './autopilot.js';
@@ -16,13 +16,18 @@ const AUTO = params.has('auto');
 const SHOW_STATS = params.has('stats');
 const $ = (id) => document.getElementById(id);
 const ui = {
-  hint: $('hint'), sub: $('sub'), actBtn: $('actBtn'), falconBtn: $('falconBtn'), stickBase: $('stickBase'),
+  hint: $('hint'), sub: $('sub'), actBtn: $('actBtn'), actLabel: document.querySelector('#actBtn span'), falconBtn: $('falconBtn'), stickBase: $('stickBase'),
   stickKnob: $('stickKnob'), fade: $('fade'), title: $('title'), end: $('end'), stats: $('stats'), bar: document.querySelector('#bar i'),
 };
 
 const TEXT = {
   move: 'اسحب بإبهامك في يسار الشاشة لتمشي، وفي يمينها لتدير النظر',
-  net: 'المس مطوّلًا «فكّ» لتحرير الصقر',
+  work: 'المس «فكّ» واجلس عنده',
+  calm: 'لا تركض قربه… اقترب بهدوء وانتظر حتى يهدأ',
+  pull: 'اسحب الخيط ببطء على طوله',
+  slip: 'برفق…',
+  thrash: 'فزِع الطير… والتفّ الخيط أكثر',
+  pigeon: 'والحمامة؟ المس مطوّلًا لتحريرها',
   falcon: 'الصقر يراقب من الأعلى — المس «انقضّ»',
   freed: 'طار… ولم يقترب.',
   shoutA: '— فكّت الطير! الحقوا عليها!',
@@ -76,8 +81,9 @@ scene.add(sun, sun.target);
 
 const level = buildLevel(scene);
 const crownMesh = level.group.getObjectByName('AcaciaCrown');
-const net = buildNet();
-scene.add(net);
+const trap = buildTrap();
+scene.add(trap.group);
+const pigeonFly = { t: -1 };
 
 // ---------------------------------------------------------------- simulation + controls
 let sim = new Slice();
@@ -173,9 +179,15 @@ function updateCamera(dt) {
   }
   const B = sim.men[1];
   const wide = (B.state === 'block' || B.state === 'stepout') && Math.hypot(B.mover.x - p.x, B.mover.z - p.z) < 14;
-  const wantDist = sim.phase === 'end' ? CAMP.end : wide ? CAMP.wide : CAMP.dist;
+  const working = sim.trap.mode === 'work' || (sim.canFreePigeon && sim.actionPose > 0.3);
+  if (working) {          // swing round to a three-quarter view so the bird and her hands are both in shot
+    const want = Math.atan2(p.x - LD.TRAP.x, p.z - LD.TRAP.z) + 1.25;
+    cam.yaw += Math.atan2(Math.sin(want - cam.yaw), Math.cos(want - cam.yaw)) * Math.min(1, dt * 3);
+    cam.pitch = lerp(cam.pitch, 0.62, Math.min(1, dt * 3));
+  }
+  const wantDist = sim.phase === 'end' ? CAMP.end : working ? 2.6 : wide ? CAMP.wide : CAMP.dist;
   cam.dist = lerp(cam.dist, wantDist, 1 - Math.exp(-dt * 2));
-  const tgt = new THREE.Vector3(p.x, p.y + CAMP.lookUp, p.z);
+  const tgt = working ? new THREE.Vector3(p.x * 0.35 + LD.TRAP.x * 0.65, p.y + 0.35, p.z * 0.35 + LD.TRAP.z * 0.65) : new THREE.Vector3(p.x, p.y + CAMP.lookUp, p.z);
   cam.target.lerp(tgt, 1 - Math.exp(-dt * 10));
   let dist = cam.dist;
   const dir = new THREE.Vector3(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch));
@@ -214,6 +226,7 @@ function updateActors(dt, t) {
   else if (p.mode === 'climb') A.play('climb', 0.12, A.duration('climb') / p.climb.dur, p.climb.t < dt * 1.5);
   else if (p.mode === 'air') { /* keep the stride going while dropping off a ledge */ }
   else if (sim.actionPose > 0.05) A.play('kneel', 0.3);
+  else if (sim.phase === 'explore' && sim.trapDist < LD.TRAP.calmRadius && p.speed > 0.2 && p.speed < 2.4) A.play('sneak', 0.35, clamp(p.speed / 0.45, 0.8, 2.2));
   else if (p.speed > 2.8) A.play('run', 0.25, clamp(p.speed / 3.09, 0.8, 1.5));
   else if (p.speed > 0.25) A.play('walk', 0.25, clamp(p.speed / 1.25, 0.6, 1.5));
   else A.play('idle', 0.35);
@@ -249,7 +262,11 @@ function updateActors(dt, t) {
   const f = sim.falcon, fa = actors.falcon;
   fa.root.position.set(f.x, f.y, f.z);
   let wingAmp = 0, wingBase = 0, pitch = 0;
-  if (f.state === 'netted') { pitch = 0.9; wingAmp = Math.sin(f.flap) * 0.6; wingBase = 0.2; fa.root.rotation.y = 0.4; fa.root.rotation.z = 0.35; }
+  if (f.state === 'trapped') {            // mantling over the pigeon, talons caught; panic grows with stress
+    const st = sim.trap.stress;
+    pitch = 0.45 + 0.25 * Math.sin(f.flap * 0.5) * st; fa.root.rotation.y = 2.3; fa.root.rotation.z = 0.15 * Math.sin(f.flap * 0.7) * st;
+    wingBase = 0.35 + 0.25 * st; wingAmp = Math.sin(f.flap) * (0.12 + 0.75 * st);
+  }
   else if (f.state === 'flying') {
     fa.root.rotation.z = 0;
     fa.root.rotation.y = f.yaw;
@@ -268,8 +285,19 @@ function updateActors(dt, t) {
   fa.wingPivot.position.set(0, lerp(0.22, 0.07, fa.body.rotation.x / 1.55), lerp(0.0, 0.12, fa.body.rotation.x / 1.55));
 
   // the net slumps to the ground once cut
-  if (sim.phase !== 'explore' && net.position.y > -1.2) net.position.y -= dt * 2.5, net.rotation.x = Math.min(0.25, net.rotation.x + dt);
-  if (sim.phase === 'explore' && net.position.y !== 0) { net.position.y = 0; net.rotation.x = 0; }
+  // the pigeon: flutters while held; once freed it rights itself and flies off up the wadi
+  const pg = trap.pigeon;
+  if (sim.pigeon.state === 'free') {
+    if (pigeonFly.t < 0) { pigeonFly.t = 0; trap.nooses.visible = false; }
+    pigeonFly.t += dt;
+    const u = pigeonFly.t;
+    pg.rotation.set(0, Math.PI, 0);
+    pg.position.set(LD.TRAP.x + u * 1.5, trap.ground + u * u * 2.2, LD.TRAP.z - u * 5);
+    pg.visible = u < 4;
+  } else {
+    if (pigeonFly.t >= 0) { pigeonFly.t = -1; trap.nooses.visible = true; pg.visible = true; pg.position.set(LD.TRAP.x, trap.ground, LD.TRAP.z); }
+    pg.rotation.set(0, 0.6, 0.9 + 0.12 * Math.sin(t * 9) * (sim.phase === 'explore' ? sim.trap.stress : 0.3));
+  }
 }
 
 // ---------------------------------------------------------------- UI
@@ -286,6 +314,10 @@ function handleEvents() {
         break;
       }
       case 'freed': audio.play('net_throw', 0.8); audio.play('falcon_call', 1); say(TEXT.freed, 2.2); break;
+      case 'thrash': audio.play('falcon_call', 1, 1.25); say(TEXT.thrash, 2.0); navigator.vibrate?.([30, 40, 30]); break;
+      case 'knot': audio.play('net_throw', 0.5, 1.4); navigator.vibrate?.(15); break;
+      case 'slip': knotUI.slipFlash = 0.8; navigator.vibrate?.(40); break;
+      case 'pigeonFreed': audio.play('launch', 0.6, 1.6); break;
       case 'shout': say(ev.giveup ? TEXT.giveup : ev.man === 'A' ? TEXT.shoutA : TEXT.shoutB, 2.4); audio.play('flee', 0.5, ev.man === 'A' ? 0.8 : 0.7); break;
       case 'dive': audio.play('launch', 1); audio.play('falcon_call', 0.9, 1.1); navigator.vibrate?.(30); break;
       case 'strike': audio.play('strike', 1); cam.shake = 0.06; navigator.vibrate?.([20, 30, 40]); break;
@@ -297,17 +329,91 @@ function handleEvents() {
   }
 }
 
+// ---------------------------------------------------------------- the knot gesture
+// While Najd works the nooses, a strand is drawn across the screen: drag its bead from one end to
+// the other. Slow and steady loosens the noose; a fast jerk slips and frightens the bird.
+const knotUI = {
+  el: $('knot'), path: $('knotPath'), bead: $('knotBead'), count: $('knotCount'),
+  pts: [], t: 0, lastT: 0, drag: null, cur: -1, slipFlash: 0, pending: 0, fast: false, speed: 0,
+  layout() {
+    const w = window.innerWidth, h = window.innerHeight;
+    const a = [w * 0.24, h * 0.58], c = [w * 0.5, h * 0.36], b = [w * 0.76, h * 0.58];
+    this.pts = [];
+    for (let i = 0; i <= 48; i++) {
+      const u = i / 48, x = (1 - u) * (1 - u) * a[0] + 2 * u * (1 - u) * c[0] + u * u * b[0], y = (1 - u) * (1 - u) * a[1] + 2 * u * (1 - u) * c[1] + u * u * b[1];
+      this.pts.push([x, y]);
+    }
+    this.path.setAttribute('d', `M${a[0]},${a[1]} Q${c[0]},${c[1]} ${b[0]},${b[1]}`);
+    this.el.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    this.len = this.pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - this.pts[i - 1][0], p[1] - this.pts[i - 1][1]) : 0), 0);
+  },
+  nearestT(x, y) {
+    let best = 0, bd = 1e9;
+    this.pts.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < bd) { bd = d; best = i / 48; } });
+    return { t: best, d: bd };
+  },
+  init() {
+    this.layout();
+    window.addEventListener('resize', () => this.layout());
+    this.el.addEventListener('pointerdown', (e) => {
+      const { d } = this.nearestT(e.clientX, e.clientY);
+      if (d < 70) { this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, tm: performance.now() }; this.el.setPointerCapture(e.pointerId); }
+      e.stopPropagation();
+    });
+    this.el.addEventListener('pointermove', (e) => {
+      if (!this.drag || e.pointerId !== this.drag.id) return;
+      const now = performance.now(), dtm = Math.max(1, now - this.drag.tm);
+      const v = Math.hypot(e.clientX - this.drag.x, e.clientY - this.drag.y) / (dtm / 1000);
+      this.speed = this.speed * 0.6 + v * 0.4;
+      Object.assign(this.drag, { x: e.clientX, y: e.clientY, tm: now });
+      const { t } = this.nearestT(e.clientX, e.clientY);
+      // too fast: more than ~1.3 strand-lengths per second
+      if (this.speed > this.len * 1.3) { this.fast = true; return; }
+      if (t > this.t) { this.pending += t - this.t; this.t = t; }
+    });
+    for (const ev of ['pointerup', 'pointercancel']) this.el.addEventListener(ev, () => { this.drag = null; this.speed = 0; });
+  },
+  // called once per sim tick: what the gesture did since the last tick
+  take(sim, c) {
+    if (sim.trap.mode !== 'work') { this.pending = 0; this.fast = false; return {}; }
+    let pull = this.pending, fast = this.fast;
+    if (c.keyPull) pull += 0.012;                       // desktop testing: hold E
+    this.pending = 0; this.fast = false;
+    return { pull, pullFast: fast };
+  },
+  update(work, sim) {
+    this.el.classList.toggle('on', work);
+    if (!work) { this.cur = -1; return; }
+    const T = sim.trap;
+    if (T.cur !== this.cur) { this.cur = T.cur; this.t = T.knots[T.cur] || 0; }
+    this.t = Math.max(this.t, T.knots[T.cur] || 0);
+    if (T.knots[T.cur] < this.t - 0.3) this.t = T.knots[T.cur];       // a panic undid part of it
+    const i = Math.min(48, Math.round(this.t * 48)), p = this.pts[i] || this.pts[0];
+    this.bead.setAttribute('cx', p[0]); this.bead.setAttribute('cy', p[1]);
+    this.count.textContent = `العقدة ${Math.min(T.cur + 1, T.knots.length)} من ${T.knots.length}`;
+    this.el.classList.toggle('slip', this.slipFlash > 0);
+    this.slipFlash = Math.max(0, this.slipFlash - 1 / 60);
+  },
+};
+knotUI.init();
+
 function updateUI(dt) {
-  const near = sim.nearNet;
-  ui.actBtn.classList.toggle('show', near);
-  ui.actBtn.style.setProperty('--p', `${(sim.netHold / LD.NET.holdTime) * 100}%`);
+  const work = sim.trap.mode === 'work';
+  const showAct = sim.canWork || sim.canFreePigeon;
+  ui.actBtn.classList.toggle('show', showAct && !work);
+  ui.actLabel.textContent = sim.canFreePigeon ? 'الحمامة' : 'فكّ';
+  ui.actBtn.style.setProperty('--p', `${sim.canFreePigeon ? (sim.pigeon.hold / 1.0) * 100 : 0}%`);
+  knotUI.update(work, sim);
   const tgt = sim.diveTarget();
   ui.falconBtn.classList.toggle('show', !!tgt);
   ui.falconBtn.classList.toggle('pulse', sim.slowMo);
   let h = null;
   if (sim.hint === 'move' && started && !controls.touched && !AUTO) h = TEXT.move;
   else if (sim.hint === 'move' && started && sim.movedDist < 3 && !AUTO) h = TEXT.move;
-  if (near && sim.netHold === 0) h = TEXT.net;
+  if (sim.canWork) h = TEXT.work;
+  if (sim.tooRestless || sim.hint === 'calm') h = TEXT.calm;
+  if (work) h = knotUI.slipFlash > 0 ? TEXT.slip : TEXT.pull;
+  if (sim.canFreePigeon) h = TEXT.pigeon;
   if (sim.hint === 'falcon' && sim.slowMo) h = TEXT.falcon;
   ui.hint.textContent = h || '';
   ui.hint.classList.toggle('on', !!h);
@@ -342,7 +448,8 @@ function frame(now) {
     let steps = 0;
     while (acc >= DT && steps < 5) {
       const c = controls.sample();
-      const input = AUTO ? autopilot.input(cam.yaw) : { ...c, camYaw: cam.yaw };
+      const k = knotUI.take(sim, c);
+      const input = AUTO ? autopilot.input(cam.yaw) : { ...c, ...k, camYaw: cam.yaw };
       sim.tick(input);
       acc -= DT; steps++;
     }

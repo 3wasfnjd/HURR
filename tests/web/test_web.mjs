@@ -50,7 +50,18 @@ check(dawdle.result === 'end', 'and the checkpoint lets you finish afterwards');
 {
   const s = new Slice();
   for (let i = 0; i < 600; i++) s.tick({ mx: 0, my: 0, camYaw: 0, action: true, falcon: false });
-  check(s.phase === 'explore', 'holding the action away from the net does nothing');
+  check(s.phase === 'explore', 'holding the action away from the trap does nothing');
+}
+// ---- the trap (pigeon in a harness of nooses): patience frees the bird, haste tangles it
+{
+  const careful = runBot({ maxSeconds: 120 });
+  check(careful.slice.trap.thrashes === 0 && careful.slice.trap.knots.length === 3, 'a calm approach frees the falcon without panicking it');
+  const rushed = runBot({ rush: true, maxSeconds: 60 });
+  check(rushed.slice.phase === 'explore', 'running in and yanking the nooses never frees it');
+  check(rushed.slice.trap.thrashes > 0 && rushed.slice.trap.knots.length > 3, `panic tangles it further (${rushed.slice.trap.knots.length} nooses)`);
+  check(careful.slice.pigeon.state === 'held', 'the pigeon stays unless the player chooses to free it');
+  const kind = runBot({ freePigeon: true, maxSeconds: 120 });
+  check(kind.slice.pigeon.state === 'free' && kind.result === 'end', 'freeing the pigeon is possible and the slice can still be finished');
 }
 
 // ---- models

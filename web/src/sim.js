@@ -8,7 +8,10 @@ export const TUNING = {
   walk: 1.6, run: 4.4, accel: 16, radius: 0.32,
   step: 0.45, climbMax: 2.2, slopeMax: 0.9, gravity: 20,
   manRun: 4.3, manChaseAfterStun: 3.4, manBlockSpeed: 1.4, manStepOut: 2.8, manRadius: 0.36,
-  catchDist: 0.95, stunTime: 4.0, diveRange: 15, falconSpeed: 17, falconReturn: 11,
+  catchDist: 0.95, stunTime: 4.0,
+  // trap: how Najd's movement unsettles the trapped bird (per second)
+  stressRun: 0.6, stressWalk: 0.16, calmRate: 0.14, calmFar: 0.1, quietSpeed: 1.15,
+  workCalm: 0.55, pullFast: 0.9, pullFastStress: 1.4, pigeonHold: 1.0, diveRange: 15, falconSpeed: 17, falconReturn: 11,
   respawnDelay: 1.8, slowMo: 0.35,
 };
 
@@ -95,8 +98,8 @@ export class Mover {
 class Falcon {
   constructor() { this.reset(); }
   reset() {
-    this.state = 'netted';          // netted | flying | perched
-    this.x = L.FALCON_NET_POS.x; this.y = L.FALCON_NET_POS.y; this.z = L.FALCON_NET_POS.z;
+    this.state = 'trapped';         // trapped | flying | perched
+    this.x = L.FALCON_TRAP_POS.x; this.y = L.heightAt(L.TRAP.x, L.TRAP.z) + 0.16; this.z = L.FALCON_TRAP_POS.z;
     this.yaw = 0; this.flap = 0; this.perch = -1; this.target = null; this.flight = null; this.purpose = null;
   }
   fly(to, speed, purpose, target = null) {
@@ -156,7 +159,9 @@ export class Slice {
     this.phase = 'explore';           // explore | escape | caught | end
     this.checkpoint = 'start';
     this.time = 0; this.timeScale = 1;
-    this.netHold = 0; this.events = [];
+    this.events = [];
+    this.trap = { mode: 'wild', stress: 0.35, knots: new Array(L.TRAP.knots).fill(0), cur: 0, thrashes: 0, slips: 0 };
+    this.pigeon = { state: 'held', hold: 0 };          // held | free
     this.hint = 'move'; this.movedDist = 0;
     this.falconTaught = false; this.slowMo = false;
     this.caughtTimer = 0; this.deaths = 0; this.dives = 0;
@@ -176,9 +181,17 @@ export class Slice {
     return best;
   }
 
-  get nearNet() {
-    return this.phase === 'explore' && Math.hypot(this.player.x - L.NET.x, this.player.z - L.NET.z) < L.NET.standRadius
-      && this.player.mode === 'ground';
+  get trapDist() { return Math.hypot(this.player.x - L.TRAP.x, this.player.z - L.TRAP.z); }
+  // close enough and the bird calm enough to kneel and work the nooses
+  get canWork() {
+    return this.phase === 'explore' && this.trap.mode === 'wild' && this.trapDist < L.TRAP.reach
+      && this.player.mode === 'ground' && this.trap.stress < TUNING.workCalm;
+  }
+  get tooRestless() {
+    return this.phase === 'explore' && this.trap.mode === 'wild' && this.trapDist < L.TRAP.reach && this.trap.stress >= TUNING.workCalm;
+  }
+  get canFreePigeon() {
+    return this.phase === 'escape' && this.pigeon.state === 'held' && this.trapDist < L.TRAP.reach + 0.3 && this.player.mode === 'ground';
   }
 
   // input: { mx, my (stick, my>0 = forward), camYaw, action (held), falcon (pressed this tick) }
@@ -196,7 +209,12 @@ export class Slice {
 
     // --- player movement (camera-relative stick)
     let mag = Math.min(1, Math.hypot(input.mx, input.my));
-    const kneeling = this.nearNet && input.action;
+    const T = this.trap;
+    if (this.canWork && input.action && !this.prevAction) { T.mode = 'work'; this.emit('kneel'); }
+    if (T.mode === 'work' && mag > 0.6) { T.mode = 'wild'; this.emit('rise'); }     // she gets up
+    const pigeonWork = this.canFreePigeon && input.action;
+    const kneeling = T.mode === 'work' || pigeonWork;
+    this.prevAction = input.action;
     if (kneeling) mag = 0;
     let dx = 0, dz = 0, speed = 0;
     if (mag > 0.15) {
@@ -205,6 +223,8 @@ export class Slice {
       dx = fx * input.my + rx * input.mx; dz = fz * input.my + rz * input.mx;
       const n = Math.hypot(dx, dz); dx /= n; dz /= n;
       speed = mag < 0.8 ? lerp(0.7, TUNING.walk, (mag - 0.15) / 0.65) : TUNING.run;
+      // near the trapped bird Najd creeps instead of walking (running is still possible — and frightens it)
+      if (this.phase === 'explore' && speed < TUNING.run && this.trapDist < L.TRAP.calmRadius) speed *= 0.65;
     }
     const ox = p.x, oz = p.z;
     const ev = p.step(dt, dx, dz, speed, () => true);
@@ -214,17 +234,16 @@ export class Slice {
     // --- hints
     if (this.hint === 'move' && this.movedDist > 3) this.hint = null;
 
-    // --- the net
+    // --- the trap
     this.actionPose = kneeling ? Math.min(1, this.actionPose + dt * 4) : Math.max(0, this.actionPose - dt * 4);
-    if (kneeling) {
-      this.netHold += dt;
-      p.yaw = Math.atan2(L.FALCON_NET_POS.x - p.x, L.FALCON_NET_POS.z - p.z);
-      if (this.netHold >= L.NET.holdTime) this.freeFalcon();
-    } else if (this.phase === 'explore') {
-      this.netHold = Math.max(0, this.netHold - dt * 2);
-    }
+    if (this.phase === 'explore') this.updateTrap(dt, input, p);
+    if (pigeonWork) {
+      p.yaw = Math.atan2(L.TRAP.x - p.x, L.TRAP.z - p.z);
+      this.pigeon.hold += dt;
+      if (this.pigeon.hold >= TUNING.pigeonHold) { this.pigeon.state = 'free'; this.emit('pigeonFreed'); }
+    } else this.pigeon.hold = Math.max(0, this.pigeon.hold - dt);
     if (this.phase === 'explore') {
-      this.cryTimer -= dt;
+      this.cryTimer -= dt * (1 + 2 * this.trap.stress);
       if (this.cryTimer <= 0) { this.emit('falconCry', { x: this.falcon.x, y: this.falcon.y, z: this.falcon.z }); this.cryTimer = 5 + (this.time % 3); }
     }
 
@@ -252,18 +271,51 @@ export class Slice {
     }
   }
 
+  // The bird reads Najd: running near it, or rushing the nooses, makes it panic and tangle itself
+  // further; stillness and a slow approach calm it. input.pull = progress on the current noose
+  // this tick (from the drag gesture), input.pullFast = the finger moved too fast.
+  updateTrap(dt, input, p) {
+    const T = this.trap, d = this.trapDist;
+    if (T.mode === 'wild') {
+      if (d < L.TRAP.calmRadius) {
+        const near = 0.5 + (1 - d / L.TRAP.calmRadius);
+        if (p.mode === 'climb' || p.speed > 2.4) T.stress += TUNING.stressRun * near * dt;
+        else if (p.speed > TUNING.quietSpeed) T.stress += TUNING.stressWalk * near * dt;
+        else T.stress -= TUNING.calmRate * dt;
+      } else T.stress -= TUNING.calmFar * dt;
+      if (this.hint === null && this.tooRestless && !this.restlessHinted) { this.hint = 'calm'; this.restlessHinted = true; }
+    } else if (T.mode === 'work') {
+      p.yaw = Math.atan2(L.TRAP.x - p.x, L.TRAP.z - p.z);
+      if (input.pullFast) { T.stress += TUNING.pullFastStress * dt; if (!this.slipping) { T.slips++; this.emit('slip'); } this.slipping = true; }
+      else { this.slipping = false; T.stress -= TUNING.calmRate * 0.6 * dt; T.knots[T.cur] = Math.min(1, T.knots[T.cur] + (input.pull || 0)); }
+      if (T.knots[T.cur] >= 1) {
+        this.emit('knot', { i: T.cur });
+        T.cur++;
+        if (T.cur >= T.knots.length) { this.freeFalcon(); return; }
+      }
+    }
+    if (this.hint === 'calm' && T.stress < TUNING.workCalm) this.hint = null;
+    if (T.stress >= 1) {                                // the bird panics
+      T.stress = 0.75; T.thrashes++;
+      if (T.knots.length < L.TRAP.maxKnots) T.knots.push(0);
+      if (T.mode === 'work') { T.knots[T.cur] = Math.max(0, T.knots[T.cur] - 0.5); T.mode = 'wild'; }
+      this.emit('thrash', { knots: T.knots.length - T.cur });
+    }
+    T.stress = clamp(T.stress, 0, 1);
+  }
+
   freeFalcon() {
-    this.phase = 'escape'; this.hint = null; this.netHold = 0;
+    this.phase = 'escape'; this.hint = null; this.trap.mode = 'free';
     this.checkpoint = 'freed';
     this.emit('freed');
     this.falcon.fly(L.PERCHES[0], TUNING.falconReturn, 'perch');
     const a = this.men[0];
-    a.state = 'wait'; a.timer = 0.6;
+    a.state = 'wait'; a.timer = 1.4;      // a beat to watch the bird go — then the men come
   }
 
   updateFalcon(dt) {
     const f = this.falcon;
-    if (f.state === 'netted') { f.flap += dt * (Math.sin(this.time * 1.7) > 0.4 ? 14 : 0); return; }
+    if (f.state === 'trapped') { f.flap += dt * (4 + 22 * this.trap.stress) * (this.trap.mode === 'work' ? 0.4 : 1); return; }
     if (f.update(dt) === 'arrived') {
       if (f.purpose === 'dive') {
         const m = f.target;
@@ -350,6 +402,7 @@ export class Slice {
     this.timeScale = 1; this.slowMo = false; this.hint = this.falconTaught ? null : this.hint;
     if (this.checkpoint === 'start') {
       this.phase = 'explore'; this.falcon.reset();
+      this.trap = { mode: 'wild', stress: 0.35, knots: new Array(L.TRAP.knots).fill(0), cur: 0, thrashes: 0, slips: 0 };
     } else {
       this.phase = 'escape';
       const A = this.men[0];

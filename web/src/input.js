@@ -71,7 +71,7 @@ export class Controls {
       const ky = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
       if (kx || ky) { const n = Math.hypot(kx, ky); const sp = k.has('ShiftLeft') ? 0.6 : 1; mx = (kx / n) * sp; my = (ky / n) * sp; }
     }
-    const out = { mx, my, action: this.actionHeld || k.has('KeyE') || k.has('Space'), falcon: this.falconPressed };
+    const out = { mx, my, action: this.actionHeld || k.has('KeyE') || k.has('Space'), falcon: this.falconPressed, keyPull: k.has('KeyE') };
     this.falconPressed = false;
     return out;
   }

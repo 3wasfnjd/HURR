@@ -43,6 +43,12 @@
   #stickBase { position: fixed; display: none; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%;
     border: 2px solid #ffffff55; background: rgba(20,14,12,.18); pointer-events: none; }
   #stickKnob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; border-radius: 50%; background: #fff4e6cc; transform: translate(-50%,-50%); }
+  #knot { position: fixed; inset: 0; width: 100vw; height: 100dvh; opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 4; }
+  #knot.on { opacity: 1; pointer-events: auto; }
+  #knotPath { fill: none; stroke: #efe6d6; stroke-width: 5; stroke-linecap: round; stroke-dasharray: 2 9; filter: drop-shadow(0 1px 3px #0009); }
+  #knotBead { fill: #d9a07a; stroke: #fff4e6; stroke-width: 3; }
+  #knot.slip #knotBead { fill: #c0392b; }
+  #knotCount { fill: #fff4e6; font: 700 16px "Cairo", sans-serif; text-anchor: middle; paint-order: stroke; stroke: #0007; stroke-width: 3px; }
   #fade { position: fixed; inset: 0; background: #0b0807; opacity: 0; pointer-events: none; transition: opacity .7s; z-index: 6; }
   #fade.on { opacity: 1; } #fade.slow { transition: opacity 1.4s; }
   #end { z-index: 7; opacity: 0; pointer-events: none; padding: 24px; }
@@ -68,6 +74,7 @@
   <button id="falconBtn" class="btn" aria-label="انقضّ">
     <span><svg viewBox="0 0 48 48" fill="none" stroke="#fff4e6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18c8-2 13 1 20 8 7-7 12-10 20-8-6 2-10 6-13 12l-7 10-7-10C14 24 10 20 4 18z"/></svg>انقضّ</span>
   </button>
+  <svg id="knot" xmlns="http://www.w3.org/2000/svg"><path id="knotPath" d=""/><circle id="knotBead" r="16" cx="0" cy="0"/><text id="knotCount" x="50%" y="30%"></text></svg>
   <div id="fade"></div>
   <div id="end" class="layer"><div><p id="endLine"></p><p class="who">— عبودين</p><h2>نهاية المقطع الأول من المرحلة 1</h2><p id="endTime"></p><button id="again">إعادة</button></div></div>
   <div id="stats"></div>

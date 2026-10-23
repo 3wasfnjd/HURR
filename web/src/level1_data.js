@@ -15,8 +15,17 @@ export const PLATEAU_H = 4.0;
 export const FLOOR_H = 0.3;
 
 export const START = { x: 0.0, z: 9.0, yaw: Math.PI };                 // yaw PI = facing -Z
-export const NET = { x: 2.0, z: -26.6, standRadius: 1.8, holdTime: 1.6 };
-export const FALCON_NET_POS = { x: 2.0, y: 1.85, z: -27.0 };
+// The trap (a documented Arabian method): a live pigeon wearing a harness of fine nooses,
+// tethered by a cord to a stone. The saker struck it and its talons are caught in the nooses.
+export const TRAP = {
+  x: 2.0, z: -26.8,
+  calmRadius: 7.5,          // inside this the bird reacts to how Najd moves
+  reach: 1.5,               // close enough to kneel and work the nooses
+  knots: 3,                 // nooses around the talons at the start
+  maxKnots: 5,              // panicking can tangle it further
+  stone: { x: 3.5, z: -25.3 },
+};
+export const FALCON_TRAP_POS = { x: TRAP.x, y: 0, z: TRAP.z };   // y filled at load (ground + 0.16)
 export const CAIRN = { x: 0.0, z: -63.0, radius: 2.2 };
 
 export const LEDGES = [
@@ -66,7 +75,7 @@ export const PERCHES = [
 ];
 export const CHECKPOINTS = {
   start: { x: START.x, z: START.z, yaw: START.yaw },
-  freed: { x: 0.6, z: -25.4, yaw: Math.PI },
+  freed: { x: 1.0, z: -25.2, yaw: Math.PI },
   pass: { x: 0.0, z: -52.5, yaw: Math.PI },
 };
 
